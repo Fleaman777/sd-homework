@@ -1,0 +1,346 @@
+openapi: 3.1.0
+info:
+  title: Booking Service API
+  description: |
+    API сервиса бронирования (аналог Booking.com), ДЗ 2.
+    Поиск инвентаря в проде реализован через GraphQL; здесь описан REST-вариант
+    POST /inventory/search для полноты OpenAPI-контракта.
+  version: 1.0.0
+
+servers:
+  - url: https://api.booking.example/v1
+    description: Production
+
+tags:
+  - name: Search
+    description: Поиск инвентаря
+  - name: Booking
+    description: Бронирование
+  - name: Inventory
+    description: Управление имуществом
+
+paths:
+  /inventory/search:
+    post:
+      tags: [Search]
+      summary: Поиск инвентаря по фильтрам
+      operationId: searchInventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Список подходящего инвентаря
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InventorySummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /booking:
+    post:
+      tags: [Booking]
+      summary: Создать бронирование
+      operationId: createBooking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      responses:
+        '201':
+          description: Бронь создана
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/BookingPendingPayment'
+                  - $ref: '#/components/schemas/BookingConfirmed'
+              examples:
+                pendingPayment:
+                  summary: Требуется оплата
+                  value:
+                    bookingId: bkg_001
+                    status: PENDING_PAYMENT
+                    paymentInfo:
+                      providerLink: https://pay.provider/redirect/abc
+                      metaInfo: {}
+                confirmed:
+                  summary: Подтверждена без немедленной оплаты
+                  value:
+                    bookingId: bkg_001
+                    status: CONFIRMED
+                    inventoryDetails:
+                      name: Apartment near Old Town
+                      address: Kotor, ME
+                    userName: Roman F.
+                    price: 840
+                    dates:
+                      checkIn: '2026-08-01'
+                      checkOut: '2026-08-07'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Единица уже забронирована на выбранные даты
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /inventory:
+    post:
+      tags: [Inventory]
+      summary: Добавить новое имущество
+      operationId: createInventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryCreateRequest'
+      responses:
+        '201':
+          description: Имущество создано
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [inventoryId]
+                properties:
+                  inventoryId:
+                    type: string
+                    example: inv_123
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+components:
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    DateRange:
+      type: object
+      required: [checkIn, checkOut]
+      properties:
+        checkIn:
+          type: string
+          format: date
+        checkOut:
+          type: string
+          format: date
+
+    PriceRange:
+      type: object
+      properties:
+        min:
+          type: number
+        max:
+          type: number
+        currency:
+          type: string
+          example: EUR
+
+    InventoryType:
+      type: string
+      enum: [APARTMENT, VILLA, HOTEL_ROOM, HOUSE]
+
+    Service:
+      type: string
+      enum: [CONDITIONER, REFRIGERATOR, MINIBAR, WIFI, KITCHEN, PARKING, POOL]
+
+    SearchFilter:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/InventoryType'
+        persons:
+          type: integer
+          minimum: 1
+        rooms:
+          type: integer
+          minimum: 1
+        rating:
+          type: number
+          minimum: 0
+          maximum: 10
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+        distanceToCenter:
+          type: integer
+          description: Максимальная дистанция до центра в метрах
+
+    SearchRequest:
+      type: object
+      required: [dates]
+      properties:
+        dates:
+          $ref: '#/components/schemas/DateRange'
+        price:
+          $ref: '#/components/schemas/PriceRange'
+        city:
+          type: string
+        country:
+          type: string
+        filter:
+          $ref: '#/components/schemas/SearchFilter'
+
+    InventoryOption:
+      type: object
+      properties:
+        name:
+          type: string
+        price:
+          type: number
+
+    InventorySummary:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        city:
+          type: string
+        country:
+          type: string
+        type:
+          $ref: '#/components/schemas/InventoryType'
+        description:
+          type: string
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryOption'
+        facilities:
+          type: array
+          items:
+            type: string
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+
+    BookingRequest:
+      type: object
+      required: [inventoryId, accountId, dates, guests]
+      properties:
+        inventoryId:
+          type: string
+        accountId:
+          type: string
+        dates:
+          $ref: '#/components/schemas/DateRange'
+        price:
+          type: number
+        currency:
+          type: string
+          example: EUR
+        guests:
+          type: integer
+          minimum: 1
+        additionalInfo:
+          type: object
+          additionalProperties: true
+
+    PaymentInfo:
+      type: object
+      properties:
+        providerLink:
+          type: string
+          format: uri
+        metaInfo:
+          type: object
+          additionalProperties: true
+
+    BookingPendingPayment:
+      type: object
+      required: [bookingId, status, paymentInfo]
+      properties:
+        bookingId:
+          type: string
+        status:
+          type: string
+          enum: [PENDING_PAYMENT]
+        paymentInfo:
+          $ref: '#/components/schemas/PaymentInfo'
+
+    BookingConfirmed:
+      type: object
+      required: [bookingId, status]
+      properties:
+        bookingId:
+          type: string
+        status:
+          type: string
+          enum: [CONFIRMED]
+        inventoryDetails:
+          type: object
+          properties:
+            name:
+              type: string
+            address:
+              type: string
+        userName:
+          type: string
+        price:
+          type: number
+        dates:
+          $ref: '#/components/schemas/DateRange'
+
+    InventoryCreateRequest:
+      type: object
+      required: [ownerId, type, price, currency]
+      properties:
+        ownerId:
+          type: string
+        type:
+          $ref: '#/components/schemas/InventoryType'
+        price:
+          type: number
+        currency:
+          type: string
+          example: EUR
+        availableDates:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+                format: date
+              to:
+                type: string
+                format: date
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+        facilities:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
