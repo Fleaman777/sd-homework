@@ -236,13 +236,10 @@ components:
 
     BookingRequest:
       type: object
-      required: [inventoryId, accountId, dates, price, currency, guests]
+      required: [inventoryId, accountId, dates, guests]
       properties:
         inventoryId:
           type: string
-        subInventoryId:
-          type: string
-          description: Конкретная опция, например тип номера в отеле
         accountId:
           type: string
         dates:
